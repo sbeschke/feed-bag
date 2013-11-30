@@ -13,26 +13,23 @@ require 'sequel'
 
 # Feeds URLs are stored here along with when they were last checked. 
 class Feed < Sequel::Model(:feeds)
-  set_schema do
-    primary_key   :id
-    text          :name
-    text          :url
-    time          :last_checked
-    time          :created
-  end
-  
-  after_create do
+
+  # Sequel hook: after creating a new feed, retrieve it to find out its title.
+  def after_create
+    super
     feed = FeedNormalizer::FeedNormalizer.parse open(url)
-    set(:name => feed.title, :created => Time.now, :last_checked => Time.parse("Jan 1, 1970"))
+    update(:name => feed.title, :created => Time.now, :last_checked => Time.parse("Jan 1, 1970"))
     puts "\tThe new feed is called '#{name}'"
   end
   
   # Returns all the entries for this feed
-  def entries; Entry.filter(:feed_id => pk); end
+  def entries
+    Entry.where(:feed_id => pk)
+  end
   
   # Gets the most recent timestamp for any entry from this feed
   def last_time
-    last = entries.order(:time.desc).first
+    last = entries.order(Sequel.desc(:time)).first
     if last.nil?
       last_checked
     else
@@ -42,21 +39,10 @@ class Feed < Sequel::Model(:feeds)
 
   # Updates this feed so its last_checked is the most recent entry's timestamp
   def tick
-    set(:last_checked => last_time)    
+    update(:last_checked => last_time)
   end
 end
 
 # An Entry is a single element of a Feed.
 class Entry < Sequel::Model(:entries)
-  set_schema do
-    primary_key   :id
-    text          :url
-    text          :title
-    text          :content
-    text          :description
-    time          :time
-
-    foreign_key   :feed_id, :table => :feeds
-    index         :url
-  end
 end

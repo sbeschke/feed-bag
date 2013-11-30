@@ -21,33 +21,58 @@
 #
 # AUTHOR
 #   Mark D. Reid <mark.reid@anu.edu.au>
+#   
+#   Updated by Sebastian Beschke <sebastian@sbeschke.de>
 #
 # CREATED
 #   2008-01-18
 
 require 'rubygems'
 require 'feed-normalizer'
-require 'Sequel'
+require 'sequel'
 require 'optparse'
 
-def clean_feeds ; Feed.create_table! ; end
-def clean_entries ; Entry.create_table! ; end
+dbFile = "feedbag.db"
+optListFeeds = false
+optClean = false
 
-# Wipes the entier database clean.
+
+def clean_feeds
+  DB.drop_table? (:feeds)
+end
+
+def clean_entries
+  DB.drop_table?(:entries)
+end
+
+# Wipes the entire database clean.
 def clean
   clean_entries
   clean_feeds
 end
 
-# Open the given file as an SQLite database using Sequel and the models
-def use(db)
-  Sequel.open "sqlite:///#{db}"
-  $: << File.expand_path(File.dirname(__FILE__))
-  require 'models'
-  
-  # Build up the tables after a clean or on first run
-  Feed.create_table unless Feed.table_exists?
-  Entry.create_table unless Entry.table_exists?  
+def initFeedTable
+  DB.create_table? :feeds do
+    primary_key   :id
+    text          :name
+    text          :url
+    time          :last_checked
+    time          :created
+  end
+end
+
+def initEntryTable
+  DB.create_table? :entries do
+    primary_key   :id
+    text          :url
+    text          :title
+    text          :content
+    text          :description
+    time          :time
+
+    foreign_key   :feed_id, :table => :feeds
+    index         :url
+  end
 end
 
 def scan(feed)
@@ -74,15 +99,13 @@ end
 opts = OptionParser.new
 opts.banner = "Usage: feedbag.rb [options] [feed_url]+"
 opts.on('-d', '--db DB', 'Use feed database DB') do |db| 
-  use(db) ; puts "Using #{db} for Feed DB"
+  dbFile = db
 end
 opts.on('-l', '--list', 'List all the feeds') do
-  Feed.each { |feed| puts "#{feed.id}: #{feed.name} (Checked: #{feed.last_checked}) - #{feed.entries.size}\n" }
-  exit
+  optListFeeds = true
 end
 opts.on('-C', '--clean', 'Wipes the current feed DB') do
-  clean ; puts "Cleaned DB!"
-  exit
+  optClean = true
 end
 opts.on_tail("-h", "--help", "Show this message") do
   puts opts
@@ -90,18 +113,47 @@ opts.on_tail("-h", "--help", "Show this message") do
 end
 opts.parse!
 
+# Open the given file as an SQLite database using Sequel and the models
+DB = Sequel.sqlite(dbFile)
+puts "Using #{dbFile} for Feed DB"
+
+require_relative 'models'
+
+if optClean
+  clean
+  initFeedTable
+  initEntryTable
+  puts "Cleaned DB!"
+  exit
+end
+
+# Build up the tables after a clean or on first run
+initFeedTable
+initEntryTable
+
+if optListFeeds
+  Feed.each { |feed| puts "#{feed.id}: #{feed.name} (Checked: #{feed.last_checked}) - #{feed.entries.count}\n" }
+  exit
+end
+
+
 # Add any feeds if they appear as arguments
 if ARGV.empty?
   Feed.each { |feed| puts "\nScanning #{feed.name}"; scan feed }
 else
   # Add RSS URLs to the databases
   ARGV.each do |arg|
-    if Feed.filter {:url == arg}.empty?
+    existing = Feed.where {:url == arg}
+    if existing.empty?
       puts "Creating new feed for #{arg}"
-      feed = Feed.create(:url => arg)
+      feed = Feed.new
+      feed.set(:url => arg)
+      feed.save
     else
-      feed = Feed.filter {:url == arg}.first
+      feed = existing.first
       puts "Feed entitled '#{feed.name}' already exists for #{arg}"
     end
   end
 end
+
+
