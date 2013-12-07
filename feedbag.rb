@@ -52,26 +52,26 @@ def clean
 end
 
 def initFeedTable
-  DB.create_table? :feeds do
-    primary_key   :id
-    text          :name
-    text          :url
-    time          :last_checked
-    time          :created
+  DB.create_table?  :feeds do
+    primary_key     :id
+    String          :name, :size => 10000
+    String          :url,  :size => 10000
+    DateTime        :last_checked
+    DateTime        :created
   end
 end
 
 def initEntryTable
   DB.create_table? :entries do
-    primary_key   :id
-    text          :url
-    text          :title
-    text          :content
-    text          :description
-    time          :time
+    primary_key    :id
+    String         :url,         :size => 10000
+    String         :title,       :size => 10000
+    String         :content,     :text => true
+    String         :description, :text => true
+    DateTime       :time
 
-    foreign_key   :feed_id, :table => :feeds
-    index         :url
+    foreign_key    :feed_id, :table => :feeds
+    index          :url
   end
 end
 
@@ -79,7 +79,7 @@ def scan(feed)
   feedin = FeedNormalizer::FeedNormalizer.parse open(feed.url)
   feedin.items.each do |item|
     if item.date_published > feed.last_checked
-      puts "\t#{item.title}"
+      puts "+\t#{item.title} (#{item.date_published})"
       entry = Entry.new
       entry.url = item.url
       entry.title = item.title
@@ -89,7 +89,7 @@ def scan(feed)
       entry.feed_id = feed.id
       entry.save
     else
-      print "."
+      puts ".\t#{item.title} (#{item.date_published})"
     end
   end
   feed.tick
@@ -116,6 +116,7 @@ opts.parse!
 # Open the given file as an SQLite database using Sequel and the models
 DB = Sequel.sqlite(dbFile)
 puts "Using #{dbFile} for Feed DB"
+puts "The time is #{Time.now}"
 
 require_relative 'models'
 
@@ -132,14 +133,14 @@ initFeedTable
 initEntryTable
 
 if optListFeeds
-  Feed.each { |feed| puts "#{feed.id}: #{feed.name} (Checked: #{feed.last_checked}) - #{feed.entries.count}\n" }
+  Feed.each { |feed| puts "#{feed.id}: #{feed.name} (Checked: #{feed.last_checked}) - #{feed.entries.count} items - #{feed.url}\n" }
   exit
 end
 
 
 # Add any feeds if they appear as arguments
 if ARGV.empty?
-  Feed.each { |feed| puts "\nScanning #{feed.name}"; scan feed }
+  Feed.each { |feed| puts "\nScanning #{feed.name} (last checked: #{feed.last_checked})"; scan feed }
 else
   # Add RSS URLs to the databases
   ARGV.each do |arg|

@@ -18,7 +18,7 @@ class Feed < Sequel::Model(:feeds)
   def after_create
     super
     feed = FeedNormalizer::FeedNormalizer.parse open(url)
-    update(:name => feed.title, :created => Time.now, :last_checked => Time.parse("Jan 1, 1970"))
+    update(:name => feed.title, :created => Time.now, :last_checked => Time.local(1900, 1, 1, 0, 0, 0))
     puts "\tThe new feed is called '#{name}'"
   end
   
